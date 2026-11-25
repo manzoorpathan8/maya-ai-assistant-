@@ -33,11 +33,12 @@ fun MayaChat(input: String, answer: String, busy: Boolean, status: String,
   }
   OutlinedTextField(input,onInput, label = { Text("Type a message") }, modifier = Modifier.fillMaxWidth())
   Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.SpaceEvenly,verticalAlignment = Alignment.CenterVertically) {
-   TextButton(onClick = onSend,enabled = !busy) { Text("Send") }
+   TextButton(onClick = onSend,enabled = !busy && input.isNotBlank() && !status.startsWith("Recording")) { Text("Send") }
    Button(onClick = onListen,enabled = !busy,shape = CircleShape,modifier = Modifier.size(76.dp).border(3.dp,cyan.copy(alpha = glow),CircleShape)) { Text("Mic") }
    TextButton(onClick = onStop) { Text("Stop") }
   }
   Text(status,color = cyan)
+  Text("Mic records on this phone. Tap again to send audio to ElevenLabs for transcription.", color = Color.White)
   Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.SpaceEvenly) {
    listOf("Home","Chat","Tools","Work","History").forEach { item -> TextButton(onClick = { onTool(item) },contentPadding = PaddingValues(2.dp)) { Text(item,fontSize = 11.sp) } }
   }

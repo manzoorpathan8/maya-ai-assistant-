@@ -46,6 +46,28 @@ object AiClient {
   val parts = json.getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts")
   return (0 until parts.length()).joinToString("\n"){parts.getJSONObject(it).optString("text")}.trim()
  }
+ fun transcribe(key: String, file: java.io.File): String {
+  val boundary = java.util.UUID.randomUUID().toString()
+  val connection = URL("https://api.elevenlabs.io/v1/speech-to-text").openConnection() as HttpURLConnection
+  try {
+   connection.requestMethod = "POST"
+   connection.doOutput = true
+   connection.connectTimeout = 20000
+   connection.readTimeout = 60000
+   connection.setRequestProperty("xi-api-key", key)
+   connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary)
+   java.io.DataOutputStream(connection.outputStream).use { out ->
+    out.writeBytes("--$boundary\r\nContent-Disposition: form-data; name=\"model_id\"\r\n\r\nscribe_v2\r\n")
+    out.writeBytes("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.m4a\"\r\nContent-Type: audio/mp4\r\n\r\n")
+    file.inputStream().use { it.copyTo(out) }
+    out.writeBytes("\r\n--$boundary--\r\n")
+   }
+   check(connection.responseCode in 200..299) { "ElevenLabs transcription HTTP " + connection.responseCode }
+   val result = connection.inputStream.bufferedReader().use { JSONObject(it.readText()).getString("text").trim() }
+   check(result.isNotEmpty()) { "No speech detected" }
+   return result
+  } finally { connection.disconnect() }
+ }
  fun femaleVoice(key: String): String {
   var token = ""
   do {

@@ -11,7 +11,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.*
 import kotlinx.coroutines.delay
 import android.content.Intent
-import android.speech.RecognizerIntent
 import android.media.MediaPlayer
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -81,13 +80,67 @@ class MainActivity : ComponentActivity() {
    "Draft saved"
   }.getOrDefault("Could not save draft")
  }
- private val speech = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-  val value=result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-  if(!value.isNullOrBlank()){ input=value; send() }
+ private var recorder: android.media.MediaRecorder? = null
+ private var clip: File? = null
+ private var recording by mutableStateOf(false)
+ private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+  if (allowed) startRecording() else status = "Microphone access was declined"
  }
- private fun listen(){
-  runCatching { speech.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_LANGUAGE,"ur-PK")) }.onFailure { status="Speech recognition unavailable" }
+ private fun listen() {
+  if (recording) { finishRecording(true); return }
+  if (busy) return
+  screen = "Chat"
+  if (read("eleven").isBlank()) {
+   status = "Save an ElevenLabs key for voice transcription, or type your message."
+   return
+  }
+  if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+   micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+  else startRecording()
  }
+ @Suppress("DEPRECATION")
+ private fun startRecording() {
+  if (recording || isFinishing || isDestroyed) return
+  stopVoice()
+  try {
+   val file = File.createTempFile("maya-mic-", ".m4a", cacheDir)
+   clip = file
+   val mic = android.media.MediaRecorder()
+   recorder = mic
+   mic.setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+   mic.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
+   mic.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
+   mic.setOutputFile(file.absolutePath)
+   mic.setMaxDuration(60000)
+   mic.setOnInfoListener { _, what, _ -> if (what == android.media.MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) finishRecording(true) }
+   mic.prepare()
+   mic.start()
+   recording = true
+   status = "Recording • tap Mic to transcribe with ElevenLabs, or Stop to discard"
+  } catch (e: Exception) { finishRecording(false); status = "Could not start the phone microphone" }
+ }
+ private fun finishRecording(transcribe: Boolean) {
+  val file = clip
+  clip = null
+  val mic = recorder
+  recorder = null
+  recording = false
+  val valid = runCatching { mic?.stop() }.isSuccess
+  runCatching { mic?.release() }
+  if (file == null) return
+  if (!transcribe || !valid) { file.delete(); status = if (valid) "Recording discarded" else "Recording too short"; return }
+  val key = read("eleven")
+  busy = true
+  status = "Transcribing…"
+  thread {
+   try {
+    val words = AiClient.transcribe(key, file)
+    runOnUiThread { if (!isDestroyed) { input = words; status = "Review your words and tap Send" } }
+   } catch (e: Exception) { runOnUiThread { status = e.message ?: "Transcription failed" } }
+   finally { file.delete(); runOnUiThread { busy = false } }
+  }
+ }
+ override fun onStop() { if (recording) finishRecording(false); super.onStop() }
  private fun stopVoice() {
   voiceRequest++
   player?.release()
@@ -222,6 +275,7 @@ class MainActivity : ComponentActivity() {
       }
      }
     }
+    LaunchedEffect(screen) { if (screen != "Chat" && recording) finishRecording(false) }
     BackHandler(screen != "Home") { screen = "Home" }
     if (screen == "Home") {
      Box(Modifier.fillMaxSize().background(Color(0xFF020B18)), contentAlignment = androidx.compose.ui.Alignment.Center) {
@@ -270,8 +324,8 @@ class MainActivity : ComponentActivity() {
       Text("Selected model: "+model)
       models.forEach { item -> OutlinedButton(onClick={model=item;prefs.edit().putString("model",item).apply()}){Text(item)} }
      } else when (screen) {
-      "Chat" -> MayaChat(input, answer, busy, status, { input = it }, { if (!busy) listen() }, { send() },
-       { stopVoice(); status = "Stopped" }, { screen = "Settings" }, { screen = it })
+      "Chat" -> MayaChat(input, answer, busy, status, { input = it }, { if (!busy) listen() }, { if (!recording) send() },
+       { if (recording) finishRecording(false) else { stopVoice(); status = "Stopped" } }, { screen = "Settings" }, { screen = it })
       "Browser" -> MayaBrowser(browserQuery, { browserQuery = "" }) { status = it }
       "Call", "WhatsApp" -> key(screen) {
        var number by remember { mutableStateOf("") }
