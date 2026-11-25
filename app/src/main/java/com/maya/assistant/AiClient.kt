@@ -19,7 +19,22 @@ object AiClient {
     c.setRequestProperty("Content-Type", "application/json")
     c.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
    }
-   if (c.responseCode !in 200..299) throw IllegalStateException("API HTTP ${c.responseCode}")
+   if (c.responseCode !in 200..299) {
+    val code = c.responseCode
+    val detail = runCatching {
+     val body = c.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+     JSONObject(body).optJSONObject("detail")?.optString("status").orEmpty()
+    }.getOrDefault("")
+    val message = when {
+     header != "xi-api-key" -> "Gemini HTTP $code"
+     detail == "missing_permissions" && url.contains("/v2/voices") -> "Enable Voices → Read for this ElevenLabs key, or enter a Voice ID."
+     detail == "missing_permissions" -> "Enable Text to Speech → Access for this ElevenLabs key."
+     detail == "quota_exceeded" || code == 429 -> "ElevenLabs usage limit reached."
+     code == 401 || code == 403 -> "ElevenLabs rejected this key or its access. Check the saved key and permissions."
+     else -> "ElevenLabs HTTP $code"
+    }
+    throw IllegalStateException(message)
+   }
    return c.inputStream.use { it.readBytes() }
   } finally { c.disconnect() }
  }

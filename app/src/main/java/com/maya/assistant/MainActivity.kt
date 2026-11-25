@@ -52,6 +52,7 @@ class MainActivity : ComponentActivity() {
  private var player: MediaPlayer? = null
  private var models by mutableStateOf(emptyList<String>())
  private var screen by mutableStateOf("Home")
+ private var voiceStatus by mutableStateOf("")
  private val prefs by lazy { getSharedPreferences("maya", MODE_PRIVATE) }
  private fun secretKey(): SecretKey {
   val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -216,6 +217,7 @@ class MainActivity : ComponentActivity() {
    return
   }
   val request = voiceRequest
+  voiceStatus = ""
   status = "Preparing Urdu voice…"
   thread {
    try {
@@ -240,7 +242,7 @@ class MainActivity : ComponentActivity() {
      } finally { file.delete() }
     }
    } catch (e: Exception) {
-    runOnUiThread { if (!isDestroyed && request == voiceRequest) { if (live) endLive(); status = "ElevenLabs: " + (e.message ?: "Voice unavailable") } }
+    runOnUiThread { if (!isDestroyed && request == voiceRequest) { if (live) endLive(); voiceStatus = e.message ?: "Voice unavailable"; if (screen == "Chat") status = voiceStatus } }
    }
   }
  }
@@ -345,6 +347,9 @@ class MainActivity : ComponentActivity() {
         else -> screen = action
        }
       }, Modifier.fillMaxSize().displayCutoutPadding())
+      if (voiceStatus.isNotBlank()) Surface(Modifier.align(androidx.compose.ui.Alignment.Center).padding(20.dp).clickable { screen = "Settings" }) {
+       Text(voiceStatus + "\nOpen Settings", Modifier.padding(16.dp))
+      }
       if (busy || speaking) Surface(Modifier.align(androidx.compose.ui.Alignment.BottomCenter).offset(y = (-70).dp)) {
        Text(status, Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
       }
@@ -358,7 +363,12 @@ class MainActivity : ComponentActivity() {
       Button(onClick={screen="Settings"}){Text("Settings")}
      }
      if(screen=="Settings"){
+      OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Text("Gemini connection", style = MaterialTheme.typography.titleMedium)
       OutlinedTextField(google,{google=it},label={Text("Google API Key")},visualTransformation=PasswordVisualTransformation())
+      } }
+      OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Text("Urdu voice", style = MaterialTheme.typography.titleMedium)
       OutlinedTextField(eleven,{eleven=it},label={Text("ElevenLabs API Key")},visualTransformation=PasswordVisualTransformation())
       OutlinedTextField(voice,{voice=it},label={Text("Voice ID (default: Jessica when available)")})
       Button(onClick={
@@ -369,6 +379,10 @@ class MainActivity : ComponentActivity() {
        stopVoice()
        playUrdu("السلام علیکم، میں مایا ہوں۔ آپ کی کیا مدد کر سکتی ہوں؟", eleven.trim(), voice.trim())
       }) { Text(if (eleven.isBlank()) "Preview device Urdu voice" else "Preview ElevenLabs Urdu voice") }
+      if (voiceStatus.isNotBlank()) Text(voiceStatus, color = MaterialTheme.colorScheme.error)
+      } }
+      OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Text("Gemini model", style = MaterialTheme.typography.titleMedium)
       Button(enabled=!busy && google.isNotBlank(),onClick={
        busy=true;status="Testing Google..."
        val k=google.trim()
@@ -376,6 +390,7 @@ class MainActivity : ComponentActivity() {
       }){Text("Test connection / load models")}
       Text("Selected model: "+model)
       models.forEach { item -> OutlinedButton(onClick={model=item;prefs.edit().putString("model",item).apply()}){Text(item)} }
+      } }
      } else when (screen) {
       "Chat" -> MayaChat(input, answer, busy, status, { input = it }, { if (!busy) listen() }, { if (!recording) send() },
        { if (live) endLive() else { stopVoice(); status = "Stopped" } }, { screen = "Settings" }, { screen = it })
@@ -445,7 +460,7 @@ class MainActivity : ComponentActivity() {
       }
       "Notifications" -> Text(status.ifBlank { "No recent activity" })
      }
-     Text(status,color=MaterialTheme.colorScheme.primary)
+     if (screen in setOf("Settings", "Apps", "Call", "WhatsApp", "Browser", "Tasks", "Create & Build") && status.isNotBlank()) Text(status,color=MaterialTheme.colorScheme.primary)
     }
    }
   }
