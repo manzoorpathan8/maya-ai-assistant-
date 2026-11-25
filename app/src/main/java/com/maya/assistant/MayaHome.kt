@@ -32,6 +32,16 @@ private val controls = listOf(
  HomeControl(label, index * 168 + 8, 1377, 167, 145)
 }
 
+private fun fitArtworkY(y: Float, aspect: Float): Float {
+ val portraitTop = 192f
+ val portraitBottom = 704f
+ val portraitHeight = portraitBottom - portraitTop
+ val portraitScale = minOf(aspect, 1f / 1536f)
+ val surroundScale = (1f - portraitHeight * portraitScale) / (1536f - portraitHeight)
+ val withinPortrait = (y - portraitTop).coerceIn(0f, portraitHeight)
+ return withinPortrait * portraitScale + (y - withinPortrait) * surroundScale
+}
+
 @Composable
 fun MayaHome(mouth: Float, onTool: (String) -> Unit, modifier: Modifier = Modifier) {
  val context = LocalContext.current
@@ -41,14 +51,13 @@ fun MayaHome(mouth: Float, onTool: (String) -> Unit, modifier: Modifier = Modifi
  BoxWithConstraints(modifier) {
   val width = maxWidth
   val height = maxHeight
+  val aspect = (width.value / height.value) / 1024f
   Canvas(Modifier.fillMaxSize()) {
    drawIntoCanvas { canvas ->
     val native = canvas.nativeCanvas
     native.save()
-    native.scale(size.width / 1024f, size.height / 1536f)
-    if (mouth == 0f) {
-     native.drawBitmap(bitmap, null, android.graphics.Rect(0, 0, 1024, 1536), paint)
-    } else {
+    native.scale(size.width / 1024f, size.height)
+    run {
      for (row in 0..96) for (column in 0..64) {
       val x = column * 16f
       val y = row * 16f
@@ -56,7 +65,7 @@ fun MayaHome(mouth: Float, onTool: (String) -> Unit, modifier: Modifier = Modifi
       val dy = (y - 520f) / 24f
       val index = 2 * (row * 65 + column)
       mesh[index] = x
-      mesh[index + 1] = y + (y - 520f) * exp(-dx * dx - dy * dy) * mouth
+      mesh[index + 1] = fitArtworkY(y + (y - 520f) * exp(-dx * dx - dy * dy) * mouth, aspect)
      }
      native.drawBitmapMesh(bitmap, 64, 96, mesh, 0, null, 0, paint)
     }
@@ -64,8 +73,10 @@ fun MayaHome(mouth: Float, onTool: (String) -> Unit, modifier: Modifier = Modifi
    }
   }
   controls.forEach { control ->
-   Box(Modifier.offset(width * (control.x / 1024f), height * (control.y / 1536f))
-    .size(width * (control.w / 1024f), height * (control.h / 1536f))
+   val top = fitArtworkY(control.y.toFloat(), aspect)
+   val bottom = fitArtworkY((control.y + control.h).toFloat(), aspect)
+   Box(Modifier.offset(width * (control.x / 1024f), height * top)
+    .size(width * (control.w / 1024f), height * (bottom - top))
     .semantics { contentDescription = control.label }
     .clickable(role = Role.Button) { onTool(control.label) })
   }
