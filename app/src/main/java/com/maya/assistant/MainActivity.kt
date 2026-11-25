@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
   runCatching { speech.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_LANGUAGE,"ur-PK")) }.onFailure { status="Speech recognition unavailable" }
  }
  private fun stopVoice() {
+  voiceRequest++
   player?.release()
   player = null
   tts?.stop()
@@ -100,6 +101,42 @@ class MainActivity : ComponentActivity() {
   if (isDestroyed) return
   if (urduVoiceReady && tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "maya") == TextToSpeech.SUCCESS) return
   status = "Urdu audio unavailable. Configure an ElevenLabs voice in Settings."
+ }
+ private var voiceRequest = 0
+ private fun playUrdu(text: String, apiKey: String, selected: String) {
+  stopVoice()
+  if (apiKey.isBlank()) {
+   speakOnDevice(text)
+   return
+  }
+  val request = voiceRequest
+  status = "Preparing Urdu voice…"
+  thread {
+   try {
+    val voice = selected.ifBlank { AiClient.femaleVoice(apiKey) }
+    val audio = AiClient.timedSpeech(apiKey, voice, text)
+    val file = File.createTempFile("maya-", ".mp3", cacheDir)
+    file.writeBytes(audio.bytes)
+    runOnUiThread {
+     try {
+      if (isDestroyed || request != voiceRequest) return@runOnUiThread
+      cues = audio.cues
+      player = MediaPlayer().also { media ->
+       media.setDataSource(file.absolutePath)
+       media.setOnPreparedListener { it.start(); speaking = true; status = "Speaking" }
+       media.setOnCompletionListener { stopVoice(); status = "Ready" }
+       media.setOnErrorListener { _, _, _ -> stopVoice(); status = "Voice playback failed"; true }
+       media.prepareAsync()
+      }
+     } catch (e: Exception) {
+      stopVoice()
+      status = "Voice playback failed"
+     } finally { file.delete() }
+    }
+   } catch (e: Exception) {
+    runOnUiThread { if (!isDestroyed && request == voiceRequest) status = "ElevenLabs: " + (e.message ?: "Voice unavailable") }
+   }
+  }
  }
  private fun send(includeBusiness: Boolean = false){
   if(busy || input.isBlank()) return
@@ -135,28 +172,7 @@ class MainActivity : ComponentActivity() {
      status="Reply received"
      runCatching { store.add("memory", "$prompt\n\n$reply") }
     }
-    if(voiceKey.isNotBlank() && voice.isNotBlank()){
-     val audio = runCatching { AiClient.timedSpeech(voiceKey, voice, reply) }
-      .recoverCatching { AiClient.SpeechAudio(AiClient.speak(voiceKey, voice, reply), emptyList()) }
-      .getOrNull()
-     if (audio == null) runOnUiThread { speakOnDevice(reply) }
-     else {
-      val file=File(cacheDir,"maya_voice.mp3").apply { writeBytes(audio.bytes) }
-      runOnUiThread {
-       if (isDestroyed) return@runOnUiThread
-       runCatching {
-        cues = audio.cues
-        player = MediaPlayer().apply {
-         setDataSource(file.absolutePath)
-         setOnPreparedListener { it.start(); speaking = true; status = "Speaking" }
-         setOnCompletionListener { stopVoice(); status = "Ready" }
-         setOnErrorListener { _, _, _ -> stopVoice(); speakOnDevice(reply); true }
-         prepareAsync()
-        }
-       }.onFailure { stopVoice(); speakOnDevice(reply) }
-      }
-     }
-    } else runOnUiThread { speakOnDevice(reply) }
+    runOnUiThread { if (!isDestroyed) playUrdu(reply, voiceKey, voice) }
 
    } catch(e:Exception){ runOnUiThread { status=e.message ?: "Request failed" } }
    finally { runOnUiThread { busy=false } }
@@ -216,18 +232,18 @@ class MainActivity : ComponentActivity() {
          .onFailure { status = "Camera unavailable"; screen = "Notifications" }
         "Voice greeting" -> {
          stopVoice()
-         speakOnDevice(answer.ifBlank { "جی جان، میں آپ کے لیے کیا کر سکتی ہوں؟" })
+         playUrdu(answer.ifBlank { "السلام علیکم، میں مایا ہوں۔ آپ کی کیا مدد کر سکتی ہوں؟" }, read("eleven"), prefs.getString("voice", "").orEmpty())
         }
         "Type" -> screen = "Chat"
         else -> screen = action
        }
-      }, Modifier.fillMaxSize())
+      }, Modifier.fillMaxSize().displayCutoutPadding())
       if (busy || speaking) Surface(Modifier.align(androidx.compose.ui.Alignment.BottomCenter).offset(y = (-70).dp)) {
        Text(status, Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
       }
      }
     } else Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-      .then(if (screen == "Browser") Modifier else Modifier.verticalScroll(rememberScrollState()))
+      .imePadding().displayCutoutPadding().then(if (screen == "Browser") Modifier else Modifier.verticalScroll(rememberScrollState()))
       .padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
      Text(screen, style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
      Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
@@ -237,19 +253,19 @@ class MainActivity : ComponentActivity() {
      if(screen=="Settings"){
       OutlinedTextField(google,{google=it},label={Text("Google API Key")},visualTransformation=PasswordVisualTransformation())
       OutlinedTextField(eleven,{eleven=it},label={Text("ElevenLabs API Key")},visualTransformation=PasswordVisualTransformation())
-      OutlinedTextField(voice,{voice=it},label={Text("ElevenLabs Voice ID")})
+      OutlinedTextField(voice,{voice=it},label={Text("Voice ID (blank for automatic female voice)")})
       Button(onClick={
        runCatching { save("google",google.trim());save("eleven",eleven.trim());prefs.edit().putString("voice",voice.trim()).apply();status="Settings saved" }.onFailure{status="Could not save settings"}
       }){Text("Save / update keys")}
       Button(onClick={google="";eleven="";voice="";model="";models=emptyList();prefs.edit().remove("google").remove("eleven").remove("voice").remove("model").apply();status="Keys removed"}){Text("Remove keys")}
       OutlinedButton(enabled = !busy, onClick = {
        stopVoice()
-       speakOnDevice("السلام علیکم، میں مایا ہوں۔ آپ کی کیا مدد کر سکتی ہوں؟")
-      }) { Text("Preview device Urdu voice") }
+       playUrdu("السلام علیکم، میں مایا ہوں۔ آپ کی کیا مدد کر سکتی ہوں؟", eleven.trim(), voice.trim())
+      }) { Text(if (eleven.isBlank()) "Preview device Urdu voice" else "Preview ElevenLabs Urdu voice") }
       Button(enabled=!busy && google.isNotBlank(),onClick={
        busy=true;status="Testing Google..."
        val k=google.trim()
-       thread { try { val list=AiClient.models(k);runOnUiThread {models=list;status="Connected: "+list.size+" models"} } catch(e:Exception){runOnUiThread{status=e.message ?: "Connection failed"}} finally{runOnUiThread{busy=false}} }
+       thread { try { val list=AiClient.models(k);runOnUiThread {models=list; if (model !in list) { model = list.firstOrNull { it.contains("flash") && !it.contains("image") && !it.contains("tts") && !it.contains("audio") } ?: list.firstOrNull().orEmpty() }; save("google", k); prefs.edit().putString("model", model).apply(); status=if (list.isEmpty()) "No chat models available" else "Connected • model saved"} } catch(e:Exception){runOnUiThread{status=e.message ?: "Connection failed"}} finally{runOnUiThread{busy=false}} }
       }){Text("Test connection / load models")}
       Text("Selected model: "+model)
       models.forEach { item -> OutlinedButton(onClick={model=item;prefs.edit().putString("model",item).apply()}){Text(item)} }

@@ -23,7 +23,7 @@ import kotlin.math.exp
 @Composable
 private fun HomeCard(label: String, onTool: (String) -> Unit, modifier: Modifier) {
  OutlinedCard(modifier.clickable(role = Role.Button) { onTool(label) }) {
-  Text(label, Modifier.padding(9.dp), color = MaterialTheme.colorScheme.primary)
+  Text(if (label == "Voice greeting") "Hi Dear ♥  ·  Tap to hear Maya" else label, Modifier.padding(horizontal = 8.dp, vertical = 10.dp), color = MaterialTheme.colorScheme.primary)
  }
 }
 
@@ -33,7 +33,7 @@ fun MayaHome(mouth: Float, onTool: (String) -> Unit, modifier: Modifier = Modifi
  val bitmap = remember(context) { BitmapFactory.decodeResource(context.resources, R.drawable.maya_reference) }
  val paint = remember { android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG) }
  val mesh = remember { FloatArray(2 * 65 * 97) }
- Column(modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+ Column(modifier.background(Color(0xFF041021)).padding(horizontal = 8.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
   Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
    Text("Maya ♡", Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
    HomeCard("Notifications", onTool, Modifier)
@@ -66,11 +66,11 @@ fun MayaHome(mouth: Float, onTool: (String) -> Unit, modifier: Modifier = Modifi
     native.restore()
    }
   }
-   Column(Modifier.width(102.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+   Column(Modifier.widthIn(max = 100.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
     listOf("Call","WhatsApp","Browser","Apps","Mobile Control").forEach { HomeCard(it,onTool,Modifier.fillMaxWidth()) }
    }
   }
-  listOf(listOf("Voice greeting","Mic"),listOf("Type","Chat","Camera"),listOf("Home","Tools","Work"),listOf("History","My Profile")).forEach { labels ->
+  listOf(listOf("Voice greeting"),listOf("Type","Mic","Camera"),listOf("Home","Chat","Tools"),listOf("Work","History","My Profile")).forEach { labels ->
    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
     labels.forEach { HomeCard(it,onTool,Modifier.weight(1f)) }
    }

@@ -46,10 +46,24 @@ object AiClient {
   val parts = json.getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts")
   return (0 until parts.length()).joinToString("\n"){parts.getJSONObject(it).optString("text")}.trim()
  }
+ fun femaleVoice(key: String): String {
+  var token = ""
+  do {
+   val suffix = if (token.isBlank()) "" else "&next_page_token=" + java.net.URLEncoder.encode(token, "UTF-8")
+   val response = JSONObject(String(request("https://api.elevenlabs.io/v2/voices?page_size=100" + suffix, "xi-api-key", key)))
+   val voices = response.getJSONArray("voices")
+   val candidates = (0 until voices.length()).map { voices.getJSONObject(it) }
+    .filter { it.optJSONObject("labels")?.optString("gender").equals("female", ignoreCase = true) }
+   val selected = candidates.firstOrNull { it.optJSONObject("labels")?.optString("language") in listOf("ur", "Urdu") } ?: candidates.firstOrNull()
+   if (selected != null) return selected.getString("voice_id")
+   token = if (response.optBoolean("has_more")) response.optString("next_page_token") else ""
+  } while (token.isNotBlank())
+  error("No female voice available. Enter a voice ID from your account.")
+ }
  fun speak(key: String, voice: String, text: String): ByteArray {
   require(voice.matches(Regex("[A-Za-z0-9_-]+")))
   return request("https://api.elevenlabs.io/v1/text-to-speech/$voice", "xi-api-key", key,
-   JSONObject().put("text", text).put("model_id", "eleven_v3"))
+   JSONObject().put("text", text).put("model_id", "eleven_v3").put("language_code", "ur"))
  }
 
  data class SpeechCue(val startMs: Int, val endMs: Int, val character: String)
@@ -57,7 +71,7 @@ object AiClient {
 
  fun timedSpeech(key: String, voice: String, text: String): SpeechAudio {
   require(voice.matches(Regex("[A-Za-z0-9_-]+")))
-  val body = JSONObject().put("text", text).put("model_id", "eleven_v3")
+  val body = JSONObject().put("text", text).put("model_id", "eleven_v3").put("language_code", "ur")
   val endpoint = "https://api.elevenlabs.io/v1/text-to-speech/$voice"
   val response = JSONObject(request("$endpoint/with-timestamps", "xi-api-key", key, body).toString(Charsets.UTF_8))
   val alignment = response.optJSONObject("alignment") ?: response.optJSONObject("normalized_alignment")
