@@ -106,7 +106,18 @@ class MainActivity : ComponentActivity() {
       Button(onClick={screen="Home"}){Text("Home")}
       Button(onClick={screen="Settings"}){Text("Settings")}
      }
-     if(screen=="Settings"){
+     androidx.activity.compose.BackHandler(enabled=screen!="Home"){screen="Home"}
+     if(screen=="Apps"){
+      Text("Apps Manager")
+      val apps=remember { packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),0).sortedBy { it.loadLabel(packageManager).toString().lowercase() } }
+      apps.forEach { app ->
+       OutlinedButton(onClick={
+        val info=app.activityInfo
+        runCatching { startActivity(Intent.makeMainActivity(android.content.ComponentName(info.packageName,info.name))) }.onFailure {status="Unable to open app"}
+       }){ Text(app.loadLabel(packageManager).toString()) }
+      }
+      if(apps.isEmpty()) Text("No launchable apps found")
+     } else if(screen=="Settings"){
       OutlinedTextField(google,{google=it},label={Text("Google API Key")},visualTransformation=PasswordVisualTransformation())
       OutlinedTextField(eleven,{eleven=it},label={Text("ElevenLabs API Key")},visualTransformation=PasswordVisualTransformation())
       OutlinedTextField(voice,{voice=it},label={Text("ElevenLabs Voice ID")})
@@ -126,6 +137,7 @@ class MainActivity : ComponentActivity() {
        { player?.release(); player=null; status="Stopped" }, { screen="Settings" },
        { tool ->
         when(tool) {
+         "Apps" -> {screen="Apps";status=""}
          "Home", "Chat" -> screen="Home"
          "Call" -> runCatching { startActivity(Intent(Intent.ACTION_DIAL)) }.onFailure { status="Dialer unavailable" }
          "Browser" -> runCatching { startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://www.google.com"))) }.onFailure { status="Browser unavailable" }
