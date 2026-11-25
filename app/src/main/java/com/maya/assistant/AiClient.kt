@@ -7,6 +7,36 @@ import java.net.URL
 import java.net.HttpURLConnection
 
 object AiClient {
+ private class GeminiModelUnavailable : IllegalStateException("Gemini model unavailable")
+
+ fun preferredChatModels(models: List<String>): List<String> = models.filterNot { model ->
+  listOf("image", "tts", "audio", "embedding", "robotics").any { it in model }
+ }.sortedBy { model ->
+  when {
+   "flash" in model && "preview" !in model && "experimental" !in model -> 0
+   "preview" !in model && "experimental" !in model -> 1
+   else -> 2
+  }
+ }
+
+ fun chatWithRecovery(key: String, model: String, prompt: String, audio: java.io.File? = null,
+  onModelRecovered: (String) -> Unit): String {
+  try {
+   return chat(key, model, prompt, audio)
+  } catch (_: GeminiModelUnavailable) {
+   for (candidate in preferredChatModels(models(key)).filter { it != model }.take(3)) {
+    try {
+     val reply = chat(key, candidate, prompt, audio)
+     onModelRecovered(candidate)
+     return reply
+    } catch (_: GeminiModelUnavailable) {
+     continue
+    }
+   }
+   throw IllegalStateException("Gemini model unavailable. Open Settings and reload Gemini models.")
+  }
+ }
+
  private fun request(url: String, header: String, key: String, body: JSONObject? = null): ByteArray {
   val c = URL(url).openConnection() as HttpURLConnection
   try {
@@ -21,6 +51,7 @@ object AiClient {
    }
    if (c.responseCode !in 200..299) {
     val code = c.responseCode
+    if (code == 404 && header == "x-goog-api-key" && url.endsWith(":generateContent")) throw GeminiModelUnavailable()
     val detail = runCatching {
      val body = c.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
      JSONObject(body).optJSONObject("detail")?.optString("status").orEmpty()

@@ -184,18 +184,18 @@ class MainActivity : ComponentActivity() {
   thread {
    try {
     val transcriptionPrompt = "Transcribe this recording verbatim. Write spoken Urdu in Urdu script. Return only the words. If there is no speech, return [silence]."
-    val words = if (useGeminiTranscription) AiClient.chat(google, model, transcriptionPrompt, file) else try {
+    val words = if (useGeminiTranscription) geminiReply(google, model, transcriptionPrompt, file) else try {
      AiClient.transcribe(key, file)
     } catch (_: AiClient.TranscriptionAccessDenied) {
      useGeminiTranscription = true
-     AiClient.chat(google, model, transcriptionPrompt, file)
+     geminiReply(google, model, transcriptionPrompt, file)
     }
     if (words.isBlank() || words.equals("[silence]", ignoreCase = true)) {
      runOnUiThread { if (live && turn == session && !isDestroyed) startRecording() }
      return@thread
     }
     runOnUiThread { if (live && turn == session) { input = words; status = "Thinking…" } }
-    val reply = AiClient.chat(google, model, "Reply briefly in natural Pakistani Urdu script in a feminine voice. Earlier turns:\n$context\nUser: $words")
+    val reply = geminiReply(google, model, "Reply briefly in natural Pakistani Urdu script in a feminine voice. Earlier turns:\n$context\nUser: $words")
     runOnUiThread {
      if (live && turn == session && !isDestroyed) {
       recent.addLast("User: $words\nMaya: $reply")
@@ -267,6 +267,15 @@ class MainActivity : ComponentActivity() {
    }
   }
  }
+ private fun geminiReply(key: String, model: String, prompt: String, audio: File? = null): String {
+  val current = prefs.getString("model", model).orEmpty().ifBlank { model }
+  return AiClient.chatWithRecovery(key, current, prompt, audio) { recovered ->
+   if (prefs.getString("model", "").orEmpty() == current && read("google") == key) {
+    prefs.edit().putString("model", recovered).apply()
+   }
+  }
+ }
+
  private fun send(includeBusiness: Boolean = false){
   if(busy || input.isBlank()) return
   val prompt=input
@@ -293,7 +302,7 @@ class MainActivity : ComponentActivity() {
   val voice = prefs.getString("voice", "").orEmpty()
   thread {
    try {
-    val reply=AiClient.chat(key,model,"Respond only in natural Pakistani Urdu script, in a friendly feminine voice. Understand English and Roman Urdu. User request: "+prompt + if (business.isBlank()) "" else "\nBusiness notes for context:\n$business")
+    val reply=geminiReply(key,model,"Respond only in natural Pakistani Urdu script, in a friendly feminine voice. Understand English and Roman Urdu. User request: "+prompt + if (business.isBlank()) "" else "\nBusiness notes for context:\n$business")
     check(reply.isNotBlank()) { "Gemini returned an empty reply" }
     runOnUiThread {
      if (isDestroyed) return@runOnUiThread
@@ -424,7 +433,7 @@ class MainActivity : ComponentActivity() {
       Button(enabled=!busy && google.isNotBlank(),onClick={
        busy=true;status="Testing Google..."
        val k=google.trim()
-       thread { try { val list=AiClient.models(k);runOnUiThread {models=list; if (model !in list) { model = list.firstOrNull { it.contains("flash") && !it.contains("image") && !it.contains("tts") && !it.contains("audio") } ?: list.firstOrNull().orEmpty() }; save("google", k); prefs.edit().putString("model", model).apply(); status=if (list.isEmpty()) "No chat models available" else "Connected • model saved"} } catch(e:Exception){runOnUiThread{status=e.message ?: "Connection failed"}} finally{runOnUiThread{busy=false}} }
+       thread { try { val list=AiClient.preferredChatModels(AiClient.models(k));runOnUiThread {models=list; if (model !in list) { model = list.firstOrNull().orEmpty() }; save("google", k); prefs.edit().putString("model", model).apply(); status=if (list.isEmpty()) "No chat models available" else "Connected • model saved"} } catch(e:Exception){runOnUiThread{status=e.message ?: "Connection failed"}} finally{runOnUiThread{busy=false}} }
       }){Text("Test connection / load models")}
       Text("Selected model: "+model)
       models.forEach { item -> OutlinedButton(onClick={model=item;prefs.edit().putString("model",item).apply()}){Text(item)} }
