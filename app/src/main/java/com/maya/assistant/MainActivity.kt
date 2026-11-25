@@ -80,34 +80,71 @@ class MainActivity : ComponentActivity() {
    "Draft saved"
   }.getOrDefault("Could not save draft")
  }
+ private var session = 0
+ private var live = false
+ private val recent = ArrayDeque<String>()
+ private val meter = android.os.Handler(android.os.Looper.getMainLooper())
+ private fun endLive() {
+  live = false
+  session++
+  meter.removeCallbacksAndMessages(null)
+  finishRecording(false)
+  stopVoice()
+  status = "Voice conversation ended"
+ }
+ private fun watchMic(mic: android.media.MediaRecorder) {
+  var lastSpeech = 0L
+  val started = android.os.SystemClock.elapsedRealtime()
+  var loudFrames = 0
+  fun sample() {
+   if (!live || recorder !== mic) return
+   val now = android.os.SystemClock.elapsedRealtime()
+   val peak = runCatching { mic.maxAmplitude }.getOrDefault(0)
+   if (peak > (if (speaking) 4200 else 1200)) {
+    loudFrames++
+    if (!speaking || loudFrames >= 3) {
+     lastSpeech = now
+     if (speaking) { stopVoice(); status = "Listening…" }
+    }
+   } else loudFrames = 0
+   if (lastSpeech > 0 && now - lastSpeech >= 950) finishRecording(true)
+   else if (now - started > 55000 && lastSpeech == 0L) { finishRecording(false); startRecording(speaking) }
+   else meter.postDelayed({ sample() }, 100)
+  }
+  sample()
+ }
  private var recorder: android.media.MediaRecorder? = null
  private var clip: File? = null
  private var recording by mutableStateOf(false)
  private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
-  if (allowed) startRecording() else status = "Microphone access was declined"
+  if (allowed && live && screen == "Chat") startRecording() else { endLive(); status = "Microphone unavailable" }
  }
  private fun listen() {
-  if (recording) { finishRecording(true); return }
+  if (live) { endLive(); return }
   if (busy) return
   screen = "Chat"
   if (read("eleven").isBlank()) {
    status = "Save an ElevenLabs key for voice transcription, or type your message."
    return
   }
+  if (read("google").isBlank() || prefs.getString("model","").isNullOrBlank()) { screen = "Settings"; status = "Connect Gemini to start voice conversation"; return }
+  live = true
+  session++
+  recent.clear()
   if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED)
    micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
   else startRecording()
  }
  @Suppress("DEPRECATION")
- private fun startRecording() {
-  if (recording || isFinishing || isDestroyed) return
-  stopVoice()
+ private fun startRecording(duringReply: Boolean = false) {
+  if (!live || recording || isFinishing || isDestroyed) return
+  if (!duringReply) stopVoice()
   try {
    val file = File.createTempFile("maya-mic-", ".m4a", cacheDir)
    clip = file
    val mic = android.media.MediaRecorder()
    recorder = mic
-   mic.setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+   mic.setAudioSource(android.media.MediaRecorder.AudioSource.VOICE_COMMUNICATION)
    mic.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
    mic.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
    mic.setOutputFile(file.absolutePath)
@@ -116,8 +153,9 @@ class MainActivity : ComponentActivity() {
    mic.prepare()
    mic.start()
    recording = true
-   status = "Recording • tap Mic to transcribe with ElevenLabs, or Stop to discard"
-  } catch (e: Exception) { finishRecording(false); status = "Could not start the phone microphone" }
+   status = if (duringReply) "Speaking • listening for you" else "Listening…"
+   watchMic(mic)
+  } catch (e: Exception) { endLive(); status = "Could not start the phone microphone" }
  }
  private fun finishRecording(transcribe: Boolean) {
   val file = clip
@@ -129,18 +167,33 @@ class MainActivity : ComponentActivity() {
   runCatching { mic?.release() }
   if (file == null) return
   if (!transcribe || !valid) { file.delete(); status = if (valid) "Recording discarded" else "Recording too short"; return }
+  val turn = session
   val key = read("eleven")
+  val google = read("google")
+  val model = prefs.getString("model", "").orEmpty()
+  val voice = prefs.getString("voice", "").orEmpty()
+  val context = recent.joinToString("\n")
   busy = true
   status = "Transcribing…"
   thread {
    try {
     val words = AiClient.transcribe(key, file)
-    runOnUiThread { if (!isDestroyed) { input = words; status = "Review your words and tap Send" } }
-   } catch (e: Exception) { runOnUiThread { status = e.message ?: "Transcription failed" } }
+    runOnUiThread { if (live && turn == session) { input = words; status = "Thinking…" } }
+    val reply = AiClient.chat(google, model, "Reply briefly in natural Pakistani Urdu script in a feminine voice. Earlier turns:\n$context\nUser: $words")
+    runOnUiThread {
+     if (live && turn == session && !isDestroyed) {
+      recent.addLast("User: $words\nMaya: $reply")
+      if (recent.size > 6) recent.removeFirst()
+      answer = reply
+      runCatching { store.add("memory", "$words\n\n$reply") }
+      playUrdu(reply, key, voice)
+     }
+    }
+   } catch (e: Exception) { runOnUiThread { if (turn == session) { endLive(); status = e.message ?: "Voice request failed" } } }
    finally { file.delete(); runOnUiThread { busy = false } }
   }
  }
- override fun onStop() { if (recording) finishRecording(false); super.onStop() }
+ override fun onStop() { if (live) endLive(); super.onStop() }
  private fun stopVoice() {
   voiceRequest++
   player?.release()
@@ -176,8 +229,8 @@ class MainActivity : ComponentActivity() {
       cues = audio.cues
       player = MediaPlayer().also { media ->
        media.setDataSource(file.absolutePath)
-       media.setOnPreparedListener { it.start(); speaking = true; status = "Speaking" }
-       media.setOnCompletionListener { stopVoice(); status = "Ready" }
+       media.setOnPreparedListener { it.start(); speaking = true; status = "Speaking"; if (live) startRecording(true) }
+       media.setOnCompletionListener { stopVoice(); status = if (live) "Listening…" else "Ready" }
        media.setOnErrorListener { _, _, _ -> stopVoice(); status = "Voice playback failed"; true }
        media.prepareAsync()
       }
@@ -187,7 +240,7 @@ class MainActivity : ComponentActivity() {
      } finally { file.delete() }
     }
    } catch (e: Exception) {
-    runOnUiThread { if (!isDestroyed && request == voiceRequest) status = "ElevenLabs: " + (e.message ?: "Voice unavailable") }
+    runOnUiThread { if (!isDestroyed && request == voiceRequest) { if (live) endLive(); status = "ElevenLabs: " + (e.message ?: "Voice unavailable") } }
    }
   }
  }
@@ -275,7 +328,7 @@ class MainActivity : ComponentActivity() {
       }
      }
     }
-    LaunchedEffect(screen) { if (screen != "Chat" && recording) finishRecording(false) }
+    LaunchedEffect(screen) { if (screen != "Chat" && live) endLive() }
     BackHandler(screen != "Home") { screen = "Home" }
     if (screen == "Home") {
      Box(Modifier.fillMaxSize().background(Color(0xFF020B18)), contentAlignment = androidx.compose.ui.Alignment.Center) {
@@ -325,7 +378,7 @@ class MainActivity : ComponentActivity() {
       models.forEach { item -> OutlinedButton(onClick={model=item;prefs.edit().putString("model",item).apply()}){Text(item)} }
      } else when (screen) {
       "Chat" -> MayaChat(input, answer, busy, status, { input = it }, { if (!busy) listen() }, { if (!recording) send() },
-       { if (recording) finishRecording(false) else { stopVoice(); status = "Stopped" } }, { screen = "Settings" }, { screen = it })
+       { if (live) endLive() else { stopVoice(); status = "Stopped" } }, { screen = "Settings" }, { screen = it })
       "Browser" -> MayaBrowser(browserQuery, { browserQuery = "" }) { status = it }
       "Call", "WhatsApp" -> key(screen) {
        var number by remember { mutableStateOf("") }

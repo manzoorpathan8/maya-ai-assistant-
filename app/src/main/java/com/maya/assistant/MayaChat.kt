@@ -38,7 +38,7 @@ fun MayaChat(input: String, answer: String, busy: Boolean, status: String,
    TextButton(onClick = onStop) { Text("Stop") }
   }
   Text(status,color = cyan)
-  Text("Mic records on this phone. Tap again to send audio to ElevenLabs for transcription.", color = Color.White)
+  Text("Tap Mic once for voice conversation. Audio goes to ElevenLabs and transcribed words go to Gemini. Tap Stop to end.", color = Color.White)
   Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.SpaceEvenly) {
    listOf("Home","Chat","Tools","Work","History").forEach { item -> TextButton(onClick = { onTool(item) },contentPadding = PaddingValues(2.dp)) { Text(item,fontSize = 11.sp) } }
   }
