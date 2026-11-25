@@ -223,13 +223,14 @@ class MainActivity : ComponentActivity() {
   if (isDestroyed) return
   if (urduVoiceReady && tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, voiceRequest.toString()) == TextToSpeech.SUCCESS) return
   if (live) endLive()
-  voiceStatus = "Urdu audio unavailable. Check ElevenLabs Text to Speech access and Voice ID in Settings."
+  voiceStatus = "Urdu audio unavailable. Check Gemini voice access or ElevenLabs Text to Speech and Voice ID in Settings."
   status = voiceStatus
  }
  private var voiceRequest = 0
  private fun playUrdu(text: String, apiKey: String, selected: String) {
   stopVoice()
-  if (apiKey.isBlank()) {
+  val googleKey = read("google")
+  if (apiKey.isBlank() && googleKey.isBlank()) {
    speakOnDevice(text)
    return
   }
@@ -238,10 +239,22 @@ class MainActivity : ComponentActivity() {
   status = "Preparing Urdu voice…"
   thread {
    try {
-    val voice = selected.ifBlank { AiClient.femaleVoice(apiKey) }
-    val audio = AiClient.timedSpeech(apiKey, voice, text)
-    val file = File.createTempFile("maya-", ".mp3", cacheDir)
-    file.writeBytes(audio.bytes)
+    val elevenAudio = if (apiKey.isBlank()) null else runCatching {
+     val voice = selected.ifBlank { AiClient.femaleVoice(apiKey) }
+     AiClient.timedSpeech(apiKey, voice, text)
+    }.getOrElse { failure ->
+     if (googleKey.isBlank()) throw failure
+     null
+    }
+    val audio = elevenAudio ?: AiClient.geminiSpeech(googleKey, text)
+    val extension = if (elevenAudio == null) ".wav" else ".mp3"
+    val file = File.createTempFile("maya-", extension, cacheDir)
+    try {
+     file.writeBytes(audio.bytes)
+    } catch (failure: Exception) {
+     file.delete()
+     throw failure
+    }
     runOnUiThread {
      try {
       if (isDestroyed || request != voiceRequest) return@runOnUiThread
@@ -254,12 +267,12 @@ class MainActivity : ComponentActivity() {
         if (live && !recording) startRecording()
         else status = if (live) "Listening…" else "Ready"
        }
-       media.setOnErrorListener { _, _, _ -> if (live) endLive() else stopVoice(); status = "Voice playback failed"; true }
+       media.setOnErrorListener { _, _, _ -> stopVoice(); speakOnDevice(text); true }
        media.prepareAsync()
       }
      } catch (e: Exception) {
       stopVoice()
-      status = "Voice playback failed"
+      speakOnDevice(text)
      } finally { file.delete() }
     }
    } catch (e: Exception) {
@@ -397,7 +410,7 @@ class MainActivity : ComponentActivity() {
       if (voiceStatus.isNotBlank()) Surface(Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(bottom = 160.dp, start = 16.dp, end = 16.dp).clickable { screen = "Settings" }) {
        Text(voiceStatus + "\nOpen Settings", Modifier.padding(16.dp))
       }
-      if (live || busy || speaking || (status.isNotBlank() && voiceStatus.isBlank())) Surface(Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(bottom = 87.dp, start = 16.dp, end = 16.dp)) {
+      if (voiceStatus.isBlank() && (live || busy || speaking || status.isNotBlank())) Surface(Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(bottom = 154.dp, start = 16.dp, end = 16.dp)) {
        Text(if (live) "$status • Tap Mic to stop" else status, Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
       }
      }
@@ -433,7 +446,18 @@ class MainActivity : ComponentActivity() {
       Button(enabled=!busy && google.isNotBlank(),onClick={
        busy=true;status="Testing Google..."
        val k=google.trim()
-       thread { try { val list=AiClient.preferredChatModels(AiClient.models(k));runOnUiThread {models=list; if (model !in list) { model = list.firstOrNull().orEmpty() }; save("google", k); prefs.edit().putString("model", model).apply(); status=if (list.isEmpty()) "No chat models available" else "Connected • model saved"} } catch(e:Exception){runOnUiThread{status=e.message ?: "Connection failed"}} finally{runOnUiThread{busy=false}} }
+       val selectedModel = model
+       thread { try { val list = AiClient.preferredChatModels(AiClient.models(k))
+        var verified = selectedModel.takeIf { it in list } ?: list.firstOrNull() ?: error("No chat models available")
+        val response = AiClient.chatWithRecovery(k, verified, "Reply with OK.") { verified = it }
+        check(response.isNotBlank()) { "Gemini returned an empty reply" }
+        runOnUiThread {
+         save("google", k)
+         prefs.edit().putString("model", verified).apply()
+         model = verified
+         models = list
+         status = "Connected • chat model verified"
+        } } catch(e:Exception){runOnUiThread{status=e.message ?: "Connection failed"}} finally{runOnUiThread{busy=false}} }
       }){Text("Test connection / load models")}
       Text("Selected model: "+model)
       models.forEach { item -> OutlinedButton(onClick={model=item;prefs.edit().putString("model",item).apply()}){Text(item)} }

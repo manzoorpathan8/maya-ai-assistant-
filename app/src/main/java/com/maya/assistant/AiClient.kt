@@ -146,6 +146,31 @@ object AiClient {
  data class SpeechCue(val startMs: Int, val endMs: Int, val character: String)
  data class SpeechAudio(val bytes: ByteArray, val cues: List<SpeechCue>)
 
+ fun geminiSpeech(key: String, text: String): SpeechAudio {
+  val voice = JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", "Kore"))
+  val config = JSONObject().put("responseModalities", JSONArray().put("AUDIO"))
+   .put("speechConfig", JSONObject().put("voiceConfig", voice))
+  val parts = JSONArray().put(JSONObject().put("text", "Read the following message naturally in Pakistani Urdu, without adding an introduction:\n$text"))
+  val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", parts)))
+   .put("generationConfig", config)
+  val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
+  val response = JSONObject(request(url, "x-goog-api-key", key, body).toString(Charsets.UTF_8))
+  val output = response.getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts")
+  val audio = (0 until output.length()).firstNotNullOfOrNull { output.getJSONObject(it).optJSONObject("inlineData") }
+   ?: error("Gemini returned no speech audio")
+  val pcm = Base64.decode(audio.getString("data"), Base64.DEFAULT)
+  val mime = audio.optString("mimeType")
+  check(mime.startsWith("audio/L16", ignoreCase = true) && pcm.isNotEmpty() && pcm.size % 2 == 0) {
+   "Gemini returned an unsupported speech format"
+  }
+  val rate = Regex("rate=(\\d+)").find(mime)?.groupValues?.get(1)?.toIntOrNull() ?: 24000
+  val wav = java.nio.ByteBuffer.allocate(44 + pcm.size).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+  wav.put("RIFF".toByteArray()).putInt(36 + pcm.size).put("WAVEfmt ".toByteArray())
+  wav.putInt(16).putShort(1).putShort(1).putInt(rate).putInt(rate * 2).putShort(2).putShort(16)
+  wav.put("data".toByteArray()).putInt(pcm.size).put(pcm)
+  return SpeechAudio(wav.array(), emptyList())
+ }
+
  fun timedSpeech(key: String, voice: String, text: String): SpeechAudio {
   require(voice.matches(Regex("[A-Za-z0-9_-]+")))
   val body = JSONObject().put("text", text).put("model_id", "eleven_v3").put("language_code", "ur")

@@ -29,6 +29,10 @@ class MayaStore(context: Context) {
   write(category, list(category) + item)
   return item
  }
+ @Synchronized fun update(category: String, id: String, text: String) {
+  require(text.isNotBlank())
+  write(category, list(category).map { if (it.id == id) it.copy(text = text.trim()) else it })
+ }
  @Synchronized fun remove(category: String, id: String) {
   write(category, list(category).filterNot { it.id == id })
  }

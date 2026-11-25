@@ -113,13 +113,17 @@ internal fun AppsManager(allowed: Set<String>, setAllowed: (Set<String>) -> Unit
 internal fun LocalEntries(store: MayaStore, category: String, hint: String, onSchedule: ((String) -> Unit)? = null) {
  var entries by remember(category) { mutableStateOf(store.list(category).asReversed()) }
  var draft by remember(category) { mutableStateOf("") }
+ var editingId by remember(category) { mutableStateOf<String?>(null) }
  if (category != "memory") {
   OutlinedTextField(draft, { draft = it }, label = { Text(hint) }, modifier = Modifier.fillMaxWidth())
   Button(enabled = draft.isNotBlank(), onClick = {
-   store.add(category, draft)
+   val id = editingId
+   if (id == null) store.add(category, draft) else store.update(category, id, draft)
+   editingId = null
    entries = store.list(category).asReversed()
    draft = ""
-  }) { Text("Add") }
+  }) { Text(if (editingId == null) "Add" else "Save changes") }
+  if (editingId != null) TextButton(onClick = { editingId = null; draft = "" }) { Text("Cancel edit") }
  }
  if (entries.isEmpty()) Text("No entries yet")
  entries.forEach { entry ->
@@ -133,7 +137,12 @@ internal fun LocalEntries(store: MayaStore, category: String, hint: String, onSc
      }) { Text(if (entry.done) "Reopen" else "Mark complete") }
     }
     if (onSchedule != null && !entry.done) TextButton(onClick = { onSchedule(entry.text) }) { Text("Schedule") }
+    if (category != "memory") TextButton(onClick = {
+     editingId = entry.id
+     draft = entry.text
+    }) { Text("Edit") }
     TextButton(onClick = {
+     if (editingId == entry.id) { editingId = null; draft = "" }
      store.remove(category, entry.id)
      entries = store.list(category).asReversed()
     }) { Text("Delete") }
