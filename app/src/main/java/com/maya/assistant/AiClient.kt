@@ -2,6 +2,7 @@ package com.maya.assistant
 
 import org.json.JSONObject
 import org.json.JSONArray
+import android.util.Base64
 import java.net.URL
 import java.net.HttpURLConnection
 
@@ -47,6 +48,27 @@ object AiClient {
  }
  fun speak(key: String, voice: String, text: String): ByteArray {
   require(voice.matches(Regex("[A-Za-z0-9_-]+")))
-  return request("https://api.elevenlabs.io/v1/text-to-speech/"+voice,"xi-api-key",key,JSONObject().put("text",text).put("model_id","eleven_v3"))
+  return request("https://api.elevenlabs.io/v1/text-to-speech/$voice", "xi-api-key", key,
+   JSONObject().put("text", text).put("model_id", "eleven_v3"))
+ }
+
+ data class SpeechCue(val startMs: Int, val endMs: Int, val character: String)
+ data class SpeechAudio(val bytes: ByteArray, val cues: List<SpeechCue>)
+
+ fun timedSpeech(key: String, voice: String, text: String): SpeechAudio {
+  require(voice.matches(Regex("[A-Za-z0-9_-]+")))
+  val body = JSONObject().put("text", text).put("model_id", "eleven_v3")
+  val endpoint = "https://api.elevenlabs.io/v1/text-to-speech/$voice"
+  val response = JSONObject(request("$endpoint/with-timestamps", "xi-api-key", key, body).toString(Charsets.UTF_8))
+  val alignment = response.optJSONObject("alignment") ?: response.optJSONObject("normalized_alignment")
+  val cues = alignment?.let {
+   val characters = it.getJSONArray("characters")
+   val starts = it.getJSONArray("character_start_times_seconds")
+   val ends = it.getJSONArray("character_end_times_seconds")
+   (0 until minOf(characters.length(), starts.length(), ends.length())).map { index ->
+    SpeechCue((starts.getDouble(index) * 1000).toInt(), (ends.getDouble(index) * 1000).toInt(), characters.getString(index))
+   }
+  }.orEmpty()
+  return SpeechAudio(Base64.decode(response.getString("audio_base64"), Base64.DEFAULT), cues)
  }
 }
