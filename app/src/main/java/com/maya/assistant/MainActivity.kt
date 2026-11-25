@@ -2,6 +2,7 @@ package com.maya.assistant
 
 import android.os.Bundle
 import android.provider.MediaStore
+import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
@@ -197,7 +198,7 @@ class MainActivity : ComponentActivity() {
     }
     BackHandler(screen != "Home") { screen = "Home" }
     if (screen == "Home") {
-     Box(Modifier.fillMaxSize()) {
+     Box(Modifier.fillMaxSize().background(Color(0xFF020B18)), contentAlignment = androidx.compose.ui.Alignment.Center) {
       MayaHome(if (!speaking) 0f else if (cues.isEmpty()) mouth else timedMouth, { action ->
        when (action) {
         "Mic" -> if (speaking) stopVoice() else if (!busy) listen()
@@ -210,7 +211,7 @@ class MainActivity : ComponentActivity() {
         "Type" -> screen = "Chat"
         else -> screen = action
        }
-      }, Modifier.fillMaxSize())
+      }, Modifier.aspectRatio(2f / 3f))
       if (status.isNotBlank()) Surface(Modifier.align(androidx.compose.ui.Alignment.BottomCenter).offset(y = (-70).dp)) {
        Text(status, Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
       }
@@ -256,6 +257,17 @@ class MainActivity : ComponentActivity() {
          else PhoneActions.whatsappDraft(this@MainActivity, number, message)
         status = if (ok) "Opened for review" else "Unable to open the requested app"
        }) { Text(if (screen == "Call") "Open dialer" else "Review in WhatsApp") }
+       if (screen == "WhatsApp") {
+        Text("WhatsApp notifications", style = MaterialTheme.typography.titleMedium)
+        Text("Optional Android notification access lets Maya display current WhatsApp alerts here.")
+        OutlinedButton(onClick = {
+         runCatching { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+          .onFailure { status = "Notification access settings unavailable" }
+        }) { Text("Manage notification access") }
+        val active = WhatsAppNotifications.messages.value
+        if (WhatsAppNotifications.connected.value && active.isEmpty()) Text("No current WhatsApp alerts")
+        active.forEach { Text(it) }
+       }
       }
       "Apps" -> AppsManager(allowlist, {
        allowlist = it

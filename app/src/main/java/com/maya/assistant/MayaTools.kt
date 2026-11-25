@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -36,7 +36,7 @@ internal fun ColumnScope.MayaBrowser(onAction: (String) -> Unit) {
  val context = LocalContext.current
  val portrait = remember(context) {
   val source = BitmapFactory.decodeResource(context.resources, R.drawable.maya_reference)
-  Bitmap.createBitmap(source, 325, 180, 410, 490).toComposeImageBitmap()
+  Bitmap.createBitmap(source, 325, 180, 410, 490).asImageBitmap()
  }
  var address by remember { mutableStateOf("") }
  var destination by remember { mutableStateOf("") }
@@ -76,6 +76,7 @@ internal fun ColumnScope.MayaBrowser(onAction: (String) -> Unit) {
      loadUrl(destination)
     }
    },
+   onReset = null,
    onRelease = { it.destroy() }
   )
  }
