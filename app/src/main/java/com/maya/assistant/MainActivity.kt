@@ -72,7 +72,7 @@ class MainActivity : ComponentActivity() {
   busy=true; status="Thinking..."
   thread {
    try {
-    val reply=AiClient.chat(key,model,prompt)
+    val reply=AiClient.chat(key,model,"Respond only in natural Pakistani Urdu script, in a friendly feminine voice. Understand English and Roman Urdu. User request: "+prompt)
     runOnUiThread { answer=reply; status="Reply received" }
     val voiceKey=read("eleven")
     val voice=prefs.getString("voice","") ?: ""
@@ -122,15 +122,18 @@ class MainActivity : ComponentActivity() {
       Text("Selected model: "+model)
       models.forEach { item -> OutlinedButton(onClick={model=item;prefs.edit().putString("model",item).apply()}){Text(item)} }
      } else {
-      Text("Personal AI Assistant",style=MaterialTheme.typography.titleLarge)
-      Text("Aaj main aap ke liye kya karun?")
-      OutlinedTextField(input,{input=it},label={Text("Talk to Maya")},modifier=Modifier.fillMaxWidth())
-      Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-       Button(enabled=!busy,onClick={listen()}){Text("Mic")}
-       Button(enabled=!busy,onClick={send()}){Text("Send")}
-       OutlinedButton(onClick={player?.release();player=null;status="Stopped"}){Text("Stop")}
-      }
-      Text(answer)
+      MayaHome(input, answer, busy, status, { input=it }, { listen() }, { send() },
+       { player?.release(); player=null; status="Stopped" }, { screen="Settings" },
+       { tool ->
+        when(tool) {
+         "Home", "Chat" -> screen="Home"
+         "Call" -> runCatching { startActivity(Intent(Intent.ACTION_DIAL)) }.onFailure { status="Dialer unavailable" }
+         "Browser" -> runCatching { startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://www.google.com"))) }.onFailure { status="Browser unavailable" }
+         "WhatsApp" -> runCatching { startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://wa.me/"))) }.onFailure { status="WhatsApp unavailable" }
+         else -> status="$tool is not implemented yet"
+        }
+       })
+
      }
      Text(status,color=MaterialTheme.colorScheme.primary)
     }
