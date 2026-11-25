@@ -82,7 +82,8 @@ class MainActivity : ComponentActivity() {
   }.getOrDefault("Could not save draft")
  }
  private var session = 0
- private var live = false
+ private var live by mutableStateOf(false)
+ private var voiceScreen = "Home"
  private val recent = ArrayDeque<String>()
  private val meter = android.os.Handler(android.os.Looper.getMainLooper())
  private fun endLive() {
@@ -118,17 +119,19 @@ class MainActivity : ComponentActivity() {
  private var clip: File? = null
  private var recording by mutableStateOf(false)
  private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
-  if (allowed && live && screen == "Chat") startRecording() else { endLive(); status = "Microphone unavailable" }
+  if (!live) return@registerForActivityResult
+  if (allowed && screen == voiceScreen) startRecording() else { endLive(); status = "Microphone unavailable" }
  }
  private fun listen() {
   if (live) { endLive(); return }
   if (busy) return
-  screen = "Chat"
+  voiceScreen = screen
+  voiceStatus = ""
   if (read("eleven").isBlank()) {
    status = "Save an ElevenLabs key for voice transcription, or type your message."
    return
   }
-  if (read("google").isBlank() || prefs.getString("model","").isNullOrBlank()) { screen = "Settings"; status = "Connect Gemini to start voice conversation"; return }
+  if (read("google").isBlank() || prefs.getString("model","").isNullOrBlank()) { status = "Connect Gemini in Settings to start voice conversation"; return }
   live = true
   session++
   recent.clear()
@@ -167,7 +170,11 @@ class MainActivity : ComponentActivity() {
   val valid = runCatching { mic?.stop() }.isSuccess
   runCatching { mic?.release() }
   if (file == null) return
-  if (!transcribe || !valid) { file.delete(); status = if (valid) "Recording discarded" else "Recording too short"; return }
+  if (!transcribe || !valid) {
+   file.delete()
+   if (transcribe && live) startRecording()
+   return
+  }
   val turn = session
   val key = read("eleven")
   val google = read("google")
@@ -233,7 +240,7 @@ class MainActivity : ComponentActivity() {
        media.setDataSource(file.absolutePath)
        media.setOnPreparedListener { it.start(); speaking = true; status = "Speaking"; if (live) startRecording(true) }
        media.setOnCompletionListener { stopVoice(); status = if (live) "Listening…" else "Ready" }
-       media.setOnErrorListener { _, _, _ -> stopVoice(); status = "Voice playback failed"; true }
+       media.setOnErrorListener { _, _, _ -> if (live) endLive() else stopVoice(); status = "Voice playback failed"; true }
        media.prepareAsync()
       }
      } catch (e: Exception) {
@@ -330,16 +337,16 @@ class MainActivity : ComponentActivity() {
       }
      }
     }
-    LaunchedEffect(screen) { if (screen != "Chat" && live) endLive() }
+    LaunchedEffect(screen) { if (screen != voiceScreen && live) endLive() }
     BackHandler(screen != "Home") { screen = "Home" }
     if (screen == "Home") {
      Box(Modifier.fillMaxSize().background(Color(0xFF020B18)), contentAlignment = androidx.compose.ui.Alignment.Center) {
       MayaHome(if (!speaking) 0f else if (cues.isEmpty()) mouth else timedMouth, { action ->
        when (action) {
-        "Mic" -> if (speaking) stopVoice() else if (!busy) listen()
+        "Mic" -> listen()
         "Camera" -> runCatching { startActivity(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)) }
          .onFailure { status = "Camera unavailable"; screen = "Notifications" }
-        "Voice greeting" -> {
+        "Voice greeting" -> if (!live) {
          stopVoice()
          playUrdu(answer.ifBlank { "السلام علیکم، میں مایا ہوں۔ آپ کی کیا مدد کر سکتی ہوں؟" }, read("eleven"), prefs.getString("voice", "").orEmpty())
         }
@@ -347,11 +354,11 @@ class MainActivity : ComponentActivity() {
         else -> screen = action
        }
       }, Modifier.fillMaxSize().displayCutoutPadding())
-      if (voiceStatus.isNotBlank()) Surface(Modifier.align(androidx.compose.ui.Alignment.Center).padding(20.dp).clickable { screen = "Settings" }) {
+      if (voiceStatus.isNotBlank()) Surface(Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(bottom = 160.dp, start = 16.dp, end = 16.dp).clickable { screen = "Settings" }) {
        Text(voiceStatus + "\nOpen Settings", Modifier.padding(16.dp))
       }
-      if (busy || speaking) Surface(Modifier.align(androidx.compose.ui.Alignment.BottomCenter).offset(y = (-70).dp)) {
-       Text(status, Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+      if (live || busy || speaking || (status.isNotBlank() && voiceStatus.isBlank())) Surface(Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(bottom = 87.dp, start = 16.dp, end = 16.dp)) {
+       Text(if (live) "$status • Tap Mic to stop" else status, Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
       }
      }
     } else Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
@@ -392,7 +399,7 @@ class MainActivity : ComponentActivity() {
       models.forEach { item -> OutlinedButton(onClick={model=item;prefs.edit().putString("model",item).apply()}){Text(item)} }
       } }
      } else when (screen) {
-      "Chat" -> MayaChat(input, answer, busy, status, { input = it }, { if (!busy) listen() }, { if (!recording) send() },
+      "Chat" -> MayaChat(input, answer, busy, status, { input = it }, { listen() }, { if (!live) send() },
        { if (live) endLive() else { stopVoice(); status = "Stopped" } }, { screen = "Settings" }, { screen = it })
       "Browser" -> MayaBrowser(browserQuery, { browserQuery = "" }) { status = it }
       "Call", "WhatsApp" -> key(screen) {
