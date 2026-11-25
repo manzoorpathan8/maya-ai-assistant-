@@ -1,5 +1,6 @@
 package com.maya.assistant
 
+import androidx.compose.foundation.clickable
 import android.os.Bundle
 import android.provider.MediaStore
 import android.provider.Settings
@@ -182,6 +183,7 @@ class MainActivity : ComponentActivity() {
   }
   setContent {
    MaterialTheme(colorScheme=darkColorScheme(primary=Color(0xFF36D9FF),background=Color(0xFF020B18),surface=Color(0xFF102339))){
+    androidx.compose.runtime.CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
     var google by remember { mutableStateOf(read("google")) }
     var eleven by remember { mutableStateOf(read("eleven")) }
     var voice by remember { mutableStateOf(prefs.getString("voice","") ?: "") }
@@ -219,8 +221,8 @@ class MainActivity : ComponentActivity() {
         "Type" -> screen = "Chat"
         else -> screen = action
        }
-      }, Modifier.aspectRatio(2f / 3f))
-      if (status.isNotBlank()) Surface(Modifier.align(androidx.compose.ui.Alignment.BottomCenter).offset(y = (-70).dp)) {
+      }, Modifier.fillMaxSize())
+      if (busy || speaking) Surface(Modifier.align(androidx.compose.ui.Alignment.BottomCenter).offset(y = (-70).dp)) {
        Text(status, Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
       }
      }
@@ -284,15 +286,15 @@ class MainActivity : ComponentActivity() {
       "Mobile Control" -> {
        Text("Open allowed apps, prepare a call, or manage permissions through Android.")
        listOf("Apps", "Call", "Browser", "WhatsApp").forEach { item ->
-        OutlinedButton(onClick = { screen = item }) { Text(item) }
+        OutlinedCard(modifier = Modifier.fillMaxWidth().clickable { screen = item }) { Text(item, Modifier.padding(16.dp)) }
        }
        Button(onClick = { if (!PhoneActions.systemSettings(this@MainActivity)) status = "Android settings unavailable" }) { Text("Android settings") }
       }
       "Tools" -> listOf("Browser", "Apps", "Mobile Control", "WhatsApp", "Work").forEach { item ->
-       OutlinedButton(onClick = { screen = item }) { Text(item) }
+       OutlinedCard(modifier = Modifier.fillMaxWidth().clickable { screen = item }) { Text(item, Modifier.padding(16.dp)) }
       }
       "Work" -> listOf("Business Knowledge", "Tasks", "Create & Build").forEach { item ->
-       OutlinedButton(onClick = { screen = item }) { Text(item) }
+       OutlinedCard(modifier = Modifier.fillMaxWidth().clickable { screen = item }) { Text(item, Modifier.padding(16.dp)) }
       }
       "Business Knowledge" -> LocalEntries(store, "business", "Business note")
       "Tasks" -> LocalEntries(store, "tasks", "New task") { task ->
@@ -324,5 +326,6 @@ class MainActivity : ComponentActivity() {
     }
    }
   }
+    }
  }
 }
