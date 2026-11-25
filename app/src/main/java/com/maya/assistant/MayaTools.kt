@@ -32,14 +32,17 @@ internal fun browserAddress(input: String): String? {
 }
 
 @Composable
-internal fun ColumnScope.MayaBrowser(onAction: (String) -> Unit) {
+internal fun ColumnScope.MayaBrowser(initialSearch: String, onSearchConsumed: () -> Unit, onAction: (String) -> Unit) {
  val context = LocalContext.current
  val portrait = remember(context) {
   val source = BitmapFactory.decodeResource(context.resources, R.drawable.maya_reference)
   Bitmap.createBitmap(source, 325, 180, 410, 490).asImageBitmap()
  }
- var address by remember { mutableStateOf("") }
- var destination by remember { mutableStateOf("") }
+ var address by remember { mutableStateOf(initialSearch) }
+ var destination by remember {
+  mutableStateOf(if (initialSearch.isBlank()) "" else "https://www.google.com/search?q=" + Uri.encode(initialSearch))
+ }
+ LaunchedEffect(initialSearch) { if (initialSearch.isNotBlank()) onSearchConsumed() }
  var progress by remember { mutableIntStateOf(0) }
  var web by remember { mutableStateOf<WebView?>(null) }
  Image(portrait, "Maya", Modifier.fillMaxWidth().height(130.dp), contentScale = ContentScale.Fit)
@@ -107,7 +110,7 @@ internal fun AppsManager(allowed: Set<String>, setAllowed: (Set<String>) -> Unit
 }
 
 @Composable
-internal fun LocalEntries(store: MayaStore, category: String, hint: String) {
+internal fun LocalEntries(store: MayaStore, category: String, hint: String, onSchedule: ((String) -> Unit)? = null) {
  var entries by remember(category) { mutableStateOf(store.list(category).asReversed()) }
  var draft by remember(category) { mutableStateOf("") }
  if (category != "memory") {
@@ -129,6 +132,7 @@ internal fun LocalEntries(store: MayaStore, category: String, hint: String) {
       entries = store.list(category).asReversed()
      }) { Text(if (entry.done) "Reopen" else "Mark complete") }
     }
+    if (onSchedule != null && !entry.done) TextButton(onClick = { onSchedule(entry.text) }) { Text("Schedule") }
     TextButton(onClick = {
      store.remove(category, entry.id)
      entries = store.list(category).asReversed()

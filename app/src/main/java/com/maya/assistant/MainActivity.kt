@@ -38,6 +38,7 @@ import java.io.File
 import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
+ private var browserQuery by mutableStateOf("")
  private var input by mutableStateOf("")
  private var answer by mutableStateOf("")
  private var status by mutableStateOf("")
@@ -102,6 +103,13 @@ class MainActivity : ComponentActivity() {
  private fun send(includeBusiness: Boolean = false){
   if(busy || input.isBlank()) return
   val prompt=input
+  if (!includeBusiness) MayaCommands.webSearch(prompt)?.let {
+   browserQuery = it
+   screen = "Browser"
+   input = ""
+   status = ""
+   return
+  }
   if (!includeBusiness) MayaCommands.destination(prompt)?.let {
    screen = it
    input = ""
@@ -246,7 +254,7 @@ class MainActivity : ComponentActivity() {
      } else when (screen) {
       "Chat" -> MayaChat(input, answer, busy, status, { input = it }, { if (!busy) listen() }, { send() },
        { stopVoice(); status = "Stopped" }, { screen = "Settings" }, { screen = it })
-      "Browser" -> MayaBrowser { status = it }
+      "Browser" -> MayaBrowser(browserQuery, { browserQuery = "" }) { status = it }
       "Call", "WhatsApp" -> key(screen) {
        var number by remember { mutableStateOf("") }
        var message by remember { mutableStateOf("") }
@@ -287,7 +295,12 @@ class MainActivity : ComponentActivity() {
        OutlinedButton(onClick = { screen = item }) { Text(item) }
       }
       "Business Knowledge" -> LocalEntries(store, "business", "Business note")
-      "Tasks" -> LocalEntries(store, "tasks", "New task")
+      "Tasks" -> LocalEntries(store, "tasks", "New task") { task ->
+       val intent = Intent(Intent.ACTION_INSERT, android.provider.CalendarContract.Events.CONTENT_URI)
+        .putExtra(android.provider.CalendarContract.Events.TITLE, task.lineSequence().first().take(100))
+        .putExtra(android.provider.CalendarContract.Events.DESCRIPTION, task)
+       runCatching { startActivity(intent) }.onFailure { status = "Calendar app unavailable" }
+      }
       "History" -> LocalEntries(store, "memory", "")
       "Create & Build" -> {
        OutlinedTextField(input, { input = it }, label = { Text("Describe the draft, plan, or website code to generate") }, modifier = Modifier.fillMaxWidth())

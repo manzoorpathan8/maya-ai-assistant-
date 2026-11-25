@@ -16,6 +16,12 @@ class MayaCommandsTest {
   assertNull(MayaCommands.destination("Send a WhatsApp message"))
  }
 
+ @Test fun extractsOnlyExplicitSearchCommands() {
+  assertEquals("car repair", MayaCommands.webSearch("Search the web for car repair"))
+  assertEquals("موسم", MayaCommands.webSearch("گوگل پر تلاش کرو موسم"))
+  assertNull(MayaCommands.webSearch("Should I search the web for car repair?"))
+ }
+
  @Test fun formatsInternationalNumbers() {
   assertEquals("923001234567", MayaCommands.internationalNumber("+92 (300) 123-4567"))
   assertNull(MayaCommands.internationalNumber("03001234567"))

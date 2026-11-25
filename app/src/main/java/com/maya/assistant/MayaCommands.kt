@@ -12,6 +12,13 @@ internal object MayaCommands {
   "mobile control" to "Mobile Control", "فون کنٹرول" to "Mobile Control"
  )
 
+ fun webSearch(input: String): String? {
+  val text = input.trim()
+  val prefixes = listOf("search the web for ", "search web for ", "google search ", "گوگل پر تلاش کرو ")
+  val prefix = prefixes.firstOrNull { text.startsWith(it, ignoreCase = true) } ?: return null
+  return text.drop(prefix.length).trim().takeIf { it.isNotEmpty() }
+ }
+
  fun destination(input: String): String? {
   val command = input.trim().lowercase(Locale.ROOT)
    .trimEnd('.', '!', '؟', '۔')
