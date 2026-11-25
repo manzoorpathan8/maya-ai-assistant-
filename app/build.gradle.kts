@@ -15,4 +15,5 @@ dependencies {
  testImplementation("junit:junit:4.13.2")
  implementation("androidx.activity:activity-compose:1.9.3")
  implementation("androidx.compose.material3:material3:1.2.1")
+ implementation("androidx.compose.material:material-icons-extended:1.6.8")
 }

@@ -128,15 +128,11 @@ class MainActivity : ComponentActivity() {
   if (busy) return
   voiceScreen = screen
   voiceStatus = ""
-  if (read("eleven").isBlank()) {
-   status = "Save an ElevenLabs key for voice transcription, or type your message."
-   return
-  }
   if (read("google").isBlank() || prefs.getString("model","").isNullOrBlank()) { status = "Connect Gemini in Settings to start voice conversation"; return }
   live = true
   session++
   recent.clear()
-  useGeminiTranscription = false
+  useGeminiTranscription = read("eleven").isBlank()
   if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED)
    micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
   else startRecording()
@@ -225,8 +221,10 @@ class MainActivity : ComponentActivity() {
  }
  private fun speakOnDevice(text: String) {
   if (isDestroyed) return
-  if (urduVoiceReady && tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "maya") == TextToSpeech.SUCCESS) return
-  status = "Urdu audio unavailable. Configure an ElevenLabs voice in Settings."
+  if (urduVoiceReady && tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, voiceRequest.toString()) == TextToSpeech.SUCCESS) return
+  if (live) endLive()
+  voiceStatus = "Urdu audio unavailable. Check ElevenLabs Text to Speech access and Voice ID in Settings."
+  status = voiceStatus
  }
  private var voiceRequest = 0
  private fun playUrdu(text: String, apiKey: String, selected: String) {
@@ -251,7 +249,11 @@ class MainActivity : ComponentActivity() {
       player = MediaPlayer().also { media ->
        media.setDataSource(file.absolutePath)
        media.setOnPreparedListener { it.start(); speaking = true; status = "Speaking"; if (live) startRecording(true) }
-       media.setOnCompletionListener { stopVoice(); status = if (live) "Listening…" else "Ready" }
+       media.setOnCompletionListener {
+        stopVoice()
+        if (live && !recording) startRecording()
+        else status = if (live) "Listening…" else "Ready"
+       }
        media.setOnErrorListener { _, _, _ -> if (live) endLive() else stopVoice(); status = "Voice playback failed"; true }
        media.prepareAsync()
       }
@@ -261,7 +263,7 @@ class MainActivity : ComponentActivity() {
      } finally { file.delete() }
     }
    } catch (e: Exception) {
-    runOnUiThread { if (!isDestroyed && request == voiceRequest) { if (live) endLive(); voiceStatus = e.message ?: "Voice unavailable"; status = if (screen == "Chat") voiceStatus else "" } }
+    runOnUiThread { if (!isDestroyed && request == voiceRequest) { voiceStatus = e.message ?: "Voice unavailable"; speakOnDevice(text) } }
    }
   }
  }
@@ -309,17 +311,34 @@ class MainActivity : ComponentActivity() {
  override fun onCreate(savedInstanceState:Bundle?){
   super.onCreate(savedInstanceState)
   @Suppress("DEPRECATION")
-  window.decorView.systemUiVisibility = 5894
+  window.statusBarColor = android.graphics.Color.rgb(2, 11, 24)
+  window.navigationBarColor = android.graphics.Color.rgb(2, 11, 24)
+  window.decorView.systemUiVisibility = 0
   tts = TextToSpeech(this) { result ->
    if (result == TextToSpeech.SUCCESS && !isDestroyed) {
     tts?.let { engine ->
      val urdu = Locale.forLanguageTag("ur-PK")
      urduVoiceReady = engine.setLanguage(urdu) >= TextToSpeech.LANG_AVAILABLE
      engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-      override fun onStart(id: String?) { runOnUiThread { speaking = true; status = "Speaking" } }
-      override fun onDone(id: String?) { runOnUiThread { speaking = false; status = "Ready" } }
+      override fun onStart(id: String?) = runOnUiThread {
+       if (!isDestroyed && id == voiceRequest.toString()) {
+        speaking = true
+        status = "Speaking"
+       }
+      }
+      override fun onDone(id: String?) = runOnUiThread {
+       if (!isDestroyed && id == voiceRequest.toString()) {
+        speaking = false
+        if (live) startRecording() else status = "Ready"
+       }
+      }
       @Deprecated("Legacy Android callback")
-      override fun onError(id: String?) { runOnUiThread { speaking = false; status = "Urdu speech failed" } }
+      override fun onError(id: String?) = runOnUiThread {
+       if (!isDestroyed && id == voiceRequest.toString()) {
+        if (live) endLive() else stopVoice()
+        status = "Urdu speech failed"
+       }
+      }
      })
     }
    }
