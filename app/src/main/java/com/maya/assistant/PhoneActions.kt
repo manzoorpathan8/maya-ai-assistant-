@@ -22,8 +22,7 @@ object PhoneActions {
  fun dial(context: Context, number: String): Boolean =
   launch(context, Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null)))
  fun whatsappDraft(context: Context, number: String, message: String): Boolean {
-  val digits = number.filter { it in '0'..'9' }
-  if (digits.isEmpty()) return false
+  val digits = MayaCommands.internationalNumber(number) ?: return false
   return browser(context, "https://wa.me/" + digits + "?text=" + Uri.encode(message))
  }
  fun systemSettings(context: Context): Boolean =

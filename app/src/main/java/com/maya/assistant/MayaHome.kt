@@ -1,56 +1,73 @@
 package com.maya.assistant
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.animation.core.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import kotlin.math.exp
+
+private data class HomeControl(val label: String, val x: Int, val y: Int, val w: Int, val h: Int)
+
+private val controls = listOf(
+ HomeControl("Notifications", 770, 65, 125, 125),
+ HomeControl("Settings", 900, 65, 120, 125),
+ HomeControl("Call", 855, 298, 165, 138),
+ HomeControl("WhatsApp", 855, 441, 165, 136),
+ HomeControl("Browser", 855, 580, 165, 136),
+ HomeControl("Apps", 855, 720, 165, 139),
+ HomeControl("Mobile Control", 855, 866, 165, 144),
+ HomeControl("Voice greeting", 210, 984, 575, 157),
+ HomeControl("Type", 143, 1214, 135, 137),
+ HomeControl("Mic", 402, 1162, 220, 211),
+ HomeControl("Camera", 745, 1214, 133, 137)
+) + listOf("Home", "Chat", "Tools", "Work", "History", "My Profile").mapIndexed { index, label ->
+ HomeControl(label, index * 168 + 8, 1377, 167, 145)
+}
 
 @Composable
-fun MayaHome(input: String, answer: String, busy: Boolean, status: String,
- onInput: (String) -> Unit, onListen: () -> Unit, onSend: () -> Unit,
- onStop: () -> Unit, onSettings: () -> Unit, onTool: (String) -> Unit) {
- val cyan = Color(0xFF42DFFF)
- val shape = RoundedCornerShape(20.dp)
- val pulse = rememberInfiniteTransition(label = "voice")
- val glow by pulse.animateFloat(0.35f, 1f, infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "glow")
- Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xFF020817),Color(0xFF101344)))).padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-  Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-   Column(Modifier.weight(1f)) { Text("Maya ♡", color = cyan, fontSize = 30.sp); Text("AI Girlfriend & Mobile Assistant", color = Color.White) }
-   TextButton(onClick = onSettings) { Text("Settings") }
-  }
-  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-   Box(Modifier.weight(1f).height(280.dp).border(1.dp, cyan.copy(alpha = glow), shape).background(Color(0xFF071B35),shape), contentAlignment = Alignment.Center) {
-    // Approved portrait and animated avatar renderer will replace this placeholder.
-    Text("Maya", color = cyan, fontSize = 32.sp)
-   }
-   Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-    listOf("Call","WhatsApp","Browser","Apps","Mobile Control").forEach { tool ->
-     OutlinedButton(onClick = { onTool(tool) }) { Text(tool, fontSize = 11.sp) }
+fun MayaHome(mouth: Float, onTool: (String) -> Unit, modifier: Modifier = Modifier) {
+ val context = LocalContext.current
+ val bitmap = remember(context) { BitmapFactory.decodeResource(context.resources, R.drawable.maya_reference) }
+ val paint = remember { android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG) }
+ val mesh = remember { FloatArray(2 * 65 * 97) }
+ BoxWithConstraints(modifier) {
+  val width = maxWidth
+  val height = maxHeight
+  Canvas(Modifier.fillMaxSize()) {
+   drawIntoCanvas { canvas ->
+    val native = canvas.nativeCanvas
+    native.save()
+    native.scale(size.width / 1024f, size.height / 1536f)
+    if (mouth == 0f) {
+     native.drawBitmap(bitmap, null, android.graphics.Rect(0, 0, 1024, 1536), paint)
+    } else {
+     for (row in 0..96) for (column in 0..64) {
+      val x = column * 16f
+      val y = row * 16f
+      val dx = (x - 515f) / 46f
+      val dy = (y - 520f) / 24f
+      val index = 2 * (row * 65 + column)
+      mesh[index] = x
+      mesh[index + 1] = y + (y - 520f) * exp(-dx * dx - dy * dy) * mouth
+     }
+     native.drawBitmapMesh(bitmap, 64, 96, mesh, 0, null, 0, paint)
     }
+    native.restore()
    }
   }
-  Surface(shape = shape, color = Color(0xFF102B4B), modifier = Modifier.fillMaxWidth().border(1.dp,cyan,shape)) {
-   Text(answer.ifBlank { "جی جان ❤️ میں آپ کے لیے کیا کر سکتی ہوں؟" }, Modifier.padding(16.dp), color = Color.White, fontSize = 20.sp)
-  }
-  OutlinedTextField(input,onInput, label = { Text("Type a message") }, modifier = Modifier.fillMaxWidth())
-  Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.SpaceEvenly,verticalAlignment = Alignment.CenterVertically) {
-   TextButton(onClick = onSend,enabled = !busy) { Text("Send") }
-   Button(onClick = onListen,enabled = !busy,shape = CircleShape,modifier = Modifier.size(76.dp).border(3.dp,cyan.copy(alpha = glow),CircleShape)) { Text("Mic") }
-   TextButton(onClick = onStop) { Text("Stop") }
-  }
-  Text(status,color = cyan)
-  Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.SpaceEvenly) {
-   listOf("Home","Chat","Tools","Work","History").forEach { item -> TextButton(onClick = { onTool(item) },contentPadding = PaddingValues(2.dp)) { Text(item,fontSize = 11.sp) } }
+  controls.forEach { control ->
+   Box(Modifier.offset(width * (control.x / 1024f), height * (control.y / 1536f))
+    .size(width * (control.w / 1024f), height * (control.h / 1536f))
+    .semantics { contentDescription = control.label }
+    .clickable(role = Role.Button) { onTool(control.label) })
   }
  }
 }
