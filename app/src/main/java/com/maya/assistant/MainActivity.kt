@@ -242,7 +242,7 @@ class MainActivity : ComponentActivity() {
      } finally { file.delete() }
     }
    } catch (e: Exception) {
-    runOnUiThread { if (!isDestroyed && request == voiceRequest) { if (live) endLive(); voiceStatus = e.message ?: "Voice unavailable"; if (screen == "Chat") status = voiceStatus } }
+    runOnUiThread { if (!isDestroyed && request == voiceRequest) { if (live) endLive(); voiceStatus = e.message ?: "Voice unavailable"; status = if (screen == "Chat") voiceStatus else "" } }
    }
   }
  }
@@ -426,7 +426,17 @@ class MainActivity : ComponentActivity() {
        listOf("Apps", "Call", "Browser", "WhatsApp").forEach { item ->
         OutlinedCard(modifier = Modifier.fillMaxWidth().clickable { screen = item }) { Text(item, Modifier.padding(16.dp)) }
        }
-       Button(onClick = { if (!PhoneActions.systemSettings(this@MainActivity)) status = "Android settings unavailable" }) { Text("Android settings") }
+       listOf(
+        "Wi-Fi" to Settings.ACTION_WIFI_SETTINGS,
+        "Bluetooth" to Settings.ACTION_BLUETOOTH_SETTINGS,
+        "Sound" to Settings.ACTION_SOUND_SETTINGS,
+        "Android settings" to Settings.ACTION_SETTINGS
+       ).forEach { (label, action) ->
+        OutlinedCard(modifier = Modifier.fillMaxWidth().clickable {
+         runCatching { startActivity(Intent(action)) }
+          .onFailure { android.widget.Toast.makeText(this@MainActivity, "$label is unavailable", android.widget.Toast.LENGTH_SHORT).show() }
+        }) { Text(label, Modifier.padding(16.dp)) }
+       }
       }
       "Tools" -> listOf("Browser", "Apps", "Mobile Control", "WhatsApp", "Work").forEach { item ->
        OutlinedCard(modifier = Modifier.fillMaxWidth().clickable { screen = item }) { Text(item, Modifier.padding(16.dp)) }
