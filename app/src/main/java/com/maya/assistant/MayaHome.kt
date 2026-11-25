@@ -1,5 +1,11 @@
 package com.maya.assistant
 
+import androidx.compose.material3.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -14,22 +20,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import kotlin.math.exp
 
-private data class HomeControl(val label: String, val x: Int, val y: Int, val w: Int, val h: Int)
-
-private val controls = listOf(
- HomeControl("Notifications", 770, 65, 125, 125),
- HomeControl("Settings", 900, 65, 120, 125),
- HomeControl("Call", 855, 298, 165, 138),
- HomeControl("WhatsApp", 855, 441, 165, 136),
- HomeControl("Browser", 855, 580, 165, 136),
- HomeControl("Apps", 855, 720, 165, 139),
- HomeControl("Mobile Control", 855, 866, 165, 144),
- HomeControl("Voice greeting", 210, 984, 575, 157),
- HomeControl("Type", 143, 1214, 135, 137),
- HomeControl("Mic", 402, 1162, 220, 211),
- HomeControl("Camera", 745, 1214, 133, 137)
-) + listOf("Home", "Chat", "Tools", "Work", "History", "My Profile").mapIndexed { index, label ->
- HomeControl(label, index * 168 + 8, 1377, 167, 145)
+@Composable
+private fun HomeCard(label: String, onTool: (String) -> Unit, modifier: Modifier) {
+ OutlinedCard(modifier.clickable(role = Role.Button) { onTool(label) }) {
+  Text(label, Modifier.padding(9.dp), color = MaterialTheme.colorScheme.primary)
+ }
 }
 
 @Composable
@@ -38,14 +33,22 @@ fun MayaHome(mouth: Float, onTool: (String) -> Unit, modifier: Modifier = Modifi
  val bitmap = remember(context) { BitmapFactory.decodeResource(context.resources, R.drawable.maya_reference) }
  val paint = remember { android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG) }
  val mesh = remember { FloatArray(2 * 65 * 97) }
- BoxWithConstraints(modifier) {
-  val width = maxWidth
-  val height = maxHeight
-  Canvas(Modifier.fillMaxSize()) {
+ Column(modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+   Text("Maya ♡", Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
+   HomeCard("Notifications", onTool, Modifier)
+   HomeCard("Settings", onTool, Modifier)
+  }
+  Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+  Canvas(Modifier.weight(1f).fillMaxHeight()) {
    drawIntoCanvas { canvas ->
     val native = canvas.nativeCanvas
     native.save()
-    native.scale(size.width / 1024f, size.height / 1536f)
+    native.clipRect(0f, 0f, size.width, size.height)
+    val scale = maxOf(size.width / 820f, size.height / 785f)
+    native.translate((size.width - 820f * scale) / 2f, (size.height - 785f * scale) / 2f)
+    native.scale(scale, scale)
+    native.translate(0f, -195f)
     if (mouth == 0f) {
      native.drawBitmap(bitmap, null, android.graphics.Rect(0, 0, 1024, 1536), paint)
     } else {
@@ -63,11 +66,14 @@ fun MayaHome(mouth: Float, onTool: (String) -> Unit, modifier: Modifier = Modifi
     native.restore()
    }
   }
-  controls.forEach { control ->
-   Box(Modifier.offset(width * (control.x / 1024f), height * (control.y / 1536f))
-    .size(width * (control.w / 1024f), height * (control.h / 1536f))
-    .semantics { contentDescription = control.label }
-    .clickable(role = Role.Button) { onTool(control.label) })
+   Column(Modifier.width(102.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    listOf("Call","WhatsApp","Browser","Apps","Mobile Control").forEach { HomeCard(it,onTool,Modifier.fillMaxWidth()) }
+   }
+  }
+  listOf(listOf("Voice greeting","Mic"),listOf("Type","Chat","Camera"),listOf("Home","Tools","Work"),listOf("History","My Profile")).forEach { labels ->
+   Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    labels.forEach { HomeCard(it,onTool,Modifier.weight(1f)) }
+   }
   }
  }
 }
