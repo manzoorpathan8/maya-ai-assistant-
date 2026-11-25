@@ -54,13 +54,21 @@ object AiClient {
   } while(page.isNotEmpty())
   return result.distinct()
  }
- fun chat(key: String, model: String, prompt: String): String {
+ fun chat(key: String, model: String, prompt: String, audio: java.io.File? = null): String {
   require(model.matches(Regex("models/[A-Za-z0-9._-]+")))
   val body = JSONObject().put("systemInstruction",JSONObject().put("parts",JSONArray().put(JSONObject().put("text","You are Maya, a personal assistant. Reply naturally in the user's language, preferably Urdu or Roman Urdu. Never claim to have performed phone actions unless confirmed.")))).put("contents",JSONArray().put(JSONObject().put("parts",JSONArray().put(JSONObject().put("text",prompt)))))
+  if (audio != null) {
+   val data = JSONObject().put("mimeType", "audio/m4a")
+    .put("data", Base64.encodeToString(audio.readBytes(), Base64.NO_WRAP))
+   body.getJSONArray("contents").getJSONObject(0).getJSONArray("parts")
+    .put(JSONObject().put("inlineData", data))
+  }
   val json = JSONObject(String(request("https://generativelanguage.googleapis.com/v1beta/"+model+":generateContent","x-goog-api-key",key,body)))
   val parts = json.getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts")
   return (0 until parts.length()).joinToString("\n"){parts.getJSONObject(it).optString("text")}.trim()
  }
+ class TranscriptionAccessDenied : IllegalStateException("ElevenLabs denied Speech to Text access")
+
  fun transcribe(key: String, file: java.io.File): String {
   val boundary = java.util.UUID.randomUUID().toString()
   val connection = URL("https://api.elevenlabs.io/v1/speech-to-text").openConnection() as HttpURLConnection
@@ -77,6 +85,7 @@ object AiClient {
     file.inputStream().use { it.copyTo(out) }
     out.writeBytes("\r\n--$boundary--\r\n")
    }
+   if (connection.responseCode == 401 || connection.responseCode == 403) throw TranscriptionAccessDenied()
    check(connection.responseCode in 200..299) { "ElevenLabs transcription HTTP " + connection.responseCode }
    val result = connection.inputStream.bufferedReader().use { JSONObject(it.readText()).getString("text").trim() }
    check(result.isNotEmpty()) { "No speech detected" }

@@ -83,6 +83,7 @@ class MainActivity : ComponentActivity() {
  }
  private var session = 0
  private var live by mutableStateOf(false)
+ @Volatile private var useGeminiTranscription = false
  private var voiceScreen = "Home"
  private val recent = ArrayDeque<String>()
  private val meter = android.os.Handler(android.os.Looper.getMainLooper())
@@ -135,6 +136,7 @@ class MainActivity : ComponentActivity() {
   live = true
   session++
   recent.clear()
+  useGeminiTranscription = false
   if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED)
    micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
   else startRecording()
@@ -185,7 +187,17 @@ class MainActivity : ComponentActivity() {
   status = "Transcribing…"
   thread {
    try {
-    val words = AiClient.transcribe(key, file)
+    val transcriptionPrompt = "Transcribe this recording verbatim. Write spoken Urdu in Urdu script. Return only the words. If there is no speech, return [silence]."
+    val words = if (useGeminiTranscription) AiClient.chat(google, model, transcriptionPrompt, file) else try {
+     AiClient.transcribe(key, file)
+    } catch (_: AiClient.TranscriptionAccessDenied) {
+     useGeminiTranscription = true
+     AiClient.chat(google, model, transcriptionPrompt, file)
+    }
+    if (words.isBlank() || words.equals("[silence]", ignoreCase = true)) {
+     runOnUiThread { if (live && turn == session && !isDestroyed) startRecording() }
+     return@thread
+    }
     runOnUiThread { if (live && turn == session) { input = words; status = "Thinking…" } }
     val reply = AiClient.chat(google, model, "Reply briefly in natural Pakistani Urdu script in a feminine voice. Earlier turns:\n$context\nUser: $words")
     runOnUiThread {
