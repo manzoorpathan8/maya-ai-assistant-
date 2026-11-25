@@ -360,7 +360,7 @@ class MainActivity : ComponentActivity() {
      if(screen=="Settings"){
       OutlinedTextField(google,{google=it},label={Text("Google API Key")},visualTransformation=PasswordVisualTransformation())
       OutlinedTextField(eleven,{eleven=it},label={Text("ElevenLabs API Key")},visualTransformation=PasswordVisualTransformation())
-      OutlinedTextField(voice,{voice=it},label={Text("Voice ID (blank for automatic female voice)")})
+      OutlinedTextField(voice,{voice=it},label={Text("Voice ID (default: Jessica when available)")})
       Button(onClick={
        runCatching { save("google",google.trim());save("eleven",eleven.trim());prefs.edit().putString("voice",voice.trim()).apply();status="Settings saved" }.onFailure{status="Could not save settings"}
       }){Text("Save / update keys")}

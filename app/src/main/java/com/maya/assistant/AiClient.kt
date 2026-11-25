@@ -76,7 +76,7 @@ object AiClient {
    val voices = response.getJSONArray("voices")
    val candidates = (0 until voices.length()).map { voices.getJSONObject(it) }
     .filter { it.optJSONObject("labels")?.optString("gender").equals("female", ignoreCase = true) }
-   val selected = candidates.firstOrNull { it.optJSONObject("labels")?.optString("language") in listOf("ur", "Urdu") } ?: candidates.firstOrNull()
+   val selected = candidates.firstOrNull { it.optString("name").substringBefore(" -").trim().equals("Jessica", ignoreCase = true) } ?: candidates.firstOrNull { it.optJSONObject("labels")?.optString("language") in listOf("ur", "Urdu") } ?: candidates.firstOrNull()
    if (selected != null) return selected.getString("voice_id")
    token = if (response.optBoolean("has_more")) response.optString("next_page_token") else ""
   } while (token.isNotBlank())
